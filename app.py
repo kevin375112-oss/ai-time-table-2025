@@ -1,4 +1,4 @@
-# app.py — 15분 빈 시간 정확히 표시되는 진짜 최종본 (평점 표시 추가)
+# app.py — 15분 빈 시간 정확히 표시되는 진짜 최종본 (최종 수정본)
 import streamlit as st
 import pandas as pd
 import os
@@ -117,7 +117,6 @@ def run_ai(target_areas, pick_n, user_keyword=""):
                 valid = False; break
             curr.append(p)
         if valid:
-            # AI 매칭 점수 * 5 + 평점 * 1 (기존 가중치 유지)
             total_score = sum(c['match_score'] for c in picks) * 5 + sum(c['rating'] for c in picks)
             ids = tuple(sorted(c['id'] for c in picks))
             results.append({'score': total_score, 'schedule': curr, 'ids': ids})
@@ -130,6 +129,17 @@ def render_timetable(schedule):
     H_START, H_END = 9, 19
     TOTAL_H = (H_END - H_START) * 60 * PX
 
+    # 1. 수업 시작/종료 분 단위 시각 수집 (정시 제외)
+    specific_times = set()
+    for c in schedule:
+        for s in c['slots']:
+            # 시작 시간이 정시가 아니고 시간 범위 내인 경우
+            if s['start'] % 60 != 0 and H_START * 60 <= s['start'] < H_END * 60:
+                specific_times.add(s['start'])
+            # 종료 시간이 정시가 아니고 시간 범위 내인 경우
+            if s['end'] % 60 != 0 and H_START * 60 < s['end'] <= H_END * 60:
+                specific_times.add(s['end'])
+    
     # 하루에 모든 슬롯 모으기 (빈 시간 계산용)
     day_slots = [[] for _ in range(5)]
     for c in schedule:
@@ -143,6 +153,8 @@ def render_timetable(schedule):
                    font-size:11px;line-height:1.3;box-shadow:2px 2px 8px rgba(0,0,0,0.2);text-align:center}}
         .tt-badge {{font-size:9px;padding:2px 6px;border-radius:4px;margin-bottom:3px;background:rgba(255,255,255,0.8)}}
         .hour-line {{position:absolute;left:0;width:100%;height:1px;background:#ccc;z-index:1}}
+        /* 분 단위 시작/종료 시각을 표시하는 점선 (dashed line) */
+        .minute-line {{position:absolute;left:0;width:100%;height:1px;background:none;z-index:1;border-top:1px dashed #aaa;}}
     </style>
     <div style='display:flex;margin-left:60px;margin-bottom:10px'>
         {"".join(f"<div style='flex:1;text-align:center;padding:8px;background:#2c3e50;color:white;font-weight:bold'>{d}</div>" for d in "월화수목금")}
@@ -154,9 +166,15 @@ def render_timetable(schedule):
 
     for day in range(5):
         html += "<div class='tt-col'>"
-        # 가로선
+        # 2. 정시 가로선 (예: 9:00, 10:00)
         for h in range(H_START, H_END):
             html += f"<div class='hour-line' style='top:{(h-H_START)*60*PX}px'></div>"
+            
+        # 3. 분 단위 시작/종료 시각 가로선 (예: 10:15) - 점선으로 표시
+        for min_time in sorted(list(specific_times)):
+            top = (min_time - H_START*60) * PX
+            html += f"<div class='minute-line' style='top:{top}px;'></div>"
+
         # 강의 카드 (빈 시간은 자동으로 비워짐)
         for c in schedule:
             for s in c['slots']:
@@ -205,10 +223,9 @@ if st.button("시간표 생성", type="primary"):
                     for c in r['schedule']:
                         if c['type']=='general':
                             score = c.get('match_score', 0)
-                            rating = c.get('rating', 0.0) # 평점 가져오기
+                            rating = c.get('rating', 0.0)
                             tag = f"강력추천({int(score)}%)" if score > 80 else (f"AI매칭({int(score)}%)" if score > 40 else "")
                             
-                            # 평점 정보와 AI 매칭 태그를 함께 표시
                             st.write(f"• **{c['name']}** ({c['prof']}) | 평점: **{rating:.2f}** {tag}")
 
                     components.html(render_timetable(r['schedule']), height=950, scrolling=True)
