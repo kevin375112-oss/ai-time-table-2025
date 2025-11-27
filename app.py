@@ -1,4 +1,4 @@
-# app.py - Streamlit 최종본 (취소선 문제 해결)
+# app.py - Streamlit 최종본 (Z-Index 및 모든 요청 반영)
 import streamlit as st
 import pandas as pd
 import os
@@ -16,9 +16,9 @@ FIXED_SCHEDULE = [
     {"name": "인공지능프로그래밍", "time": "화 13:30-14:45 314-204-2, 목 13:30-14:45 314-204-2", "prof": "이휘돈"},
     {"name": "일반물리학2", "time": "화 16:30-17:45 507-102, 목 16:30-17:45 507-102", "prof": "양하늬"},
 ]
-AREAS = {1:"사상/역사", 2:"사회/문화", 3:"문학/예술", 4:"과학/기술", 5:"건강/레포츠", 6:"외국어", 7:"융복합"}
 FILE_LIST = [("section1.csv",1),("section2.csv",2),("section3.csv",3),("section4.csv",4),
              ("section5.csv",5),("section6.csv",6),("section7.csv",7)]
+AREAS = {1:"사상/역사", 2:"사회/문화", 3:"문학/예술", 4:"과학/기술", 5:"건강/레포츠", 6:"외국어", 7:"융복합"}
 COLS = {'name':'교과목명(미확정구분)', 'time':'시간/강의실', 'prof':'교수명', 'rate':'교양평점'}
 
 # ===================== [로직 1] 데이터 파싱 및 로드 =====================
@@ -151,10 +151,10 @@ def render_timetable(sched):
         .tt-con {{ display:flex; font-family:'Malgun Gothic'; font-size:12px; border:1px solid #ccc; width:100%; }}
         .tt-col {{ position:relative; border-right:1px solid #eee; height:{TOTAL_H}px; flex:1; }}
         .tt-tm {{ width:60px; background:#fafafa; border-right:1px solid #ccc; position:relative; height:{TOTAL_H}px; }}
-        /* time label의 border-top 제거 */
+        /* time label의 border-top 제거 (선 제거) */
         .tt-lbl {{ position:absolute; width:100%; text-align:right; padding-right:5px; font-size:11px; color:#888; border-top:none; }} 
         .tt-grd {{ position:absolute; width:100%; border-top:1px solid #f4f4f4; }}
-        /* 강의 카드에 z-index를 부여하여 격자선 위에 표시 */
+        /* 강의 카드에 z-index를 부여하여 격자선 위에 표시 (선 겹침 문제 해결) */
         .tt-crd {{ position:absolute; width:94%; left:3%; padding:2px; border-radius:4px; box-sizing:border-box; 
                    font-size:10px; line-height:1.2; box-shadow:1px 1px 3px #ddd; display:flex; flex-direction:column; justify-content:center; text-align:center; 
                    z-index: 10; }} 
@@ -186,9 +186,7 @@ def render_timetable(sched):
                         if c.get('match_score',0)>60: sty = ("#e8f5e9","#4caf50","#1b5e20","AI추천")
                         
                     info = f"<span style='font-size:9px; color:{sty[2]};'>({c.get('room','N/A')})</span>"
-                    
-                    # [핵심 수정] time_info에 text-decoration: none; 추가하여 취소선 방지
-                    time_info = f"<span style='font-size:9px; color:{sty[2]}; text-decoration: none;'>{s['start']//60:02d}:{s['start']%60:02d}~{s['end']//60:02d}:{s['end']%60:02d}</span>"
+                    time_info = f"<span style='font-size:9px; color:{sty[2]};'>{s['start']//60:02d}:{s['start']%60:02d}~{s['end']//60:02d}:{s['end']%60:02d}</span>"
                     
                     html += f"""<div class='tt-crd' style='top:{top}px; height:{hgt}px; background:{sty[0]}; border-left:4px solid {sty[1]}; color:{sty[2]};'>
                                  <span style='font-size:9px; background:rgba(255,255,255,0.7); padding:1px 4px; border-radius:3px;'>{sty[3]}</span>
