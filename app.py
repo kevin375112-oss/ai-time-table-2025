@@ -232,8 +232,8 @@ def render_timetable(sched):
     return html
 
 # ===================== Streamlit UI =====================
-st.set_page_config(page_title="광메카 1학년을 위한 교양 시간표 생성기", layout="wide")
-st.title("광메카 1학년을 위한 교양 시간표 생성기")
+st.set_page_config(page_title="광메카 1학년을 위한 시간표 생성기", layout="wide")
+st.title("광메카 1학년을 위한 시간표 생성기")
 
 col_settings, col_areas = st.columns([1, 1.5])
 
