@@ -1,231 +1,292 @@
-# app.py — 15분 빈 시간 정확히 표시되는 진짜 최종본 (최종 수정본)
+# app.py - Streamlit 변환 최종본
 import streamlit as st
 import pandas as pd
 import os
 import re
 import random
+import numpy as np
 from sentence_transformers import SentenceTransformer, util
 import streamlit.components.v1 as components
 
-# ===================== CSV 강제 로드 =====================
-for i in range(1, 8):
-    src = f"/mount/src/ai-time-table-2025/section{i}.csv"
-    dst = f"section{i}.csv"
-    if os.path.exists(src) and not os.path.exists(dst):
-        os.system(f"cp {src} {dst}")
-
-st.set_page_config(page_title="2025 AI 시간표 생성기", layout="wide")
-st.title("🧠 2025-2학기 AI 시간표 생성기")
-st.markdown("**전공 고정 │ 시간 겹침 0% │ 15분 빈 시간도 정확히 표시 │ 키워드만 쳐도 AI 추천**")
-
-# ===================== 전공 고정 =====================
+# ===================== [설정] =====================
+# 전공 시간표 (강의실 정보가 있다면 시간 뒤에 적어주세요)
 FIXED_SCHEDULE = [
-    {"name": "공학수학", "time": "화 9:00-10:15, 목 9:00-10:15", "prof": "강수진"},
-    {"name": "고전읽기와토론", "time": "월 9:00-10:40", "prof": "황미은"},
-    {"name": "일반화학2", "time": "월 15:00-16:15, 수 15:00-16:15", "prof": "조혜진"},
-    {"name": "인공지능프로그래밍", "time": "화 13:30-14:45, 목 13:30-14:45", "prof": "이휘돈"},
-    {"name": "일반물리학2", "time": "화 16:30-17:45, 목 16:30-17:45", "prof": "양하늬"},
+    {"name": "공학수학", "time": "화 9:00-10:15 507-101, 목 9:00-10:15 507-101", "prof": "강수진"},
+    {"name": "고전읽기와토론", "time": "월 9:00-10:40 311-104", "prof": "황미은"},
+    {"name": "일반화학2", "time": "월 15:00-16:15 507-101, 수 15:00-16:15 507-101", "prof": "조혜진"},
+    {"name": "인공지능프로그래밍", "time": "화 13:30-14:45 314-204-2, 목 13:30-14:45 314-204-2", "prof": "이휘돈"},
+    {"name": "일반물리학2", "time": "화 16:30-17:45 507-102, 목 16:30-17:45 507-102", "prof": "양하늬"},
 ]
-AREAS = {1:"사상/역사",2:"사회/문화",3:"문학/예술",4:"과학/기술",5:"건강/레포츠",6:"외국어",7:"융복합"}
 
-# ===================== AI 모델 =====================
+FILE_LIST = [("section1.csv",1),("section2.csv",2),("section3.csv",3),("section4.csv",4),
+             ("section5.csv",5),("section6.csv",6),("section7.csv",7)]
+AREAS = {1:"사상/역사", 2:"사회/문화", 3:"문학/예술", 4:"과학/기술", 5:"건강/레포츠", 6:"외국어", 7:"융복합"}
+COLS = {'name':'교과목명(미확정구분)', 'time':'시간/강의실', 'prof':'교수명', 'rate':'교양평점'}
+
+# ===================== [로직 1] 데이터 파싱 및 로드 =====================
 @st.cache_resource
 def load_model():
-    with st.spinner("AI 모델 로딩 중… (최초 30초)"):
+    with st.spinner("🤖 AI 모델 로딩 중... (최초 실행 시 시간이 걸릴 수 있습니다.)"):
         return SentenceTransformer('jhgan/ko-sroberta-multitask')
 model = load_model()
 
-# ===================== 시간 파싱 =====================
-def to_min(t): 
-    try: h,m = map(int,t.split(':')); return h*60+m 
-    except: return 0
-
-def parse_time(text):
-    if not isinstance(text,str): return []
-    text = re.sub(r'<br/?>|\n|,', ' ', text)
-    slots = []
-    regex = re.compile(r"([월화수목금토일])\s*(\d{1,2}:\d{2})\s*(?:[-~]\s*(\d{1,2}:\d{2})|\(\s*(\d+)\s*\))")
+def parse_data(raw_str):
+    """ 시간/장소/슬롯 데이터 추출 """
+    if not isinstance(raw_str, str): return [], "", ""
+    
+    parts = [p.strip() for p in re.sub(r'<br/?>|\n', ',', raw_str).split(',') if p.strip()]
+    slots, fmt_times, rooms = [], [], []
+    last_day = None
     yoil_map = {d:i for i,d in enumerate("월화수목금토일")}
-    for m in regex.finditer(text):
-        d_str, s_str, e_str, dur_str = m.groups()
-        start = to_min(s_str)
-        end = to_min(e_str) if e_str else start + int(dur_str or 0)
-        if end > start:
-            slots.append({'day': yoil_map.get(d_str, 0), 'start': start, 'end': end})
-    return slots
+    
+    p_rng = re.compile(r"([월화수목금토일])?\s*(\d{1,2}:\d{2})\s*[-~]\s*(\d{1,2}:\d{2})(.*)")
+    p_dur = re.compile(r"([월화수목금토일])?\s*(\d{1,2}:\d{2})\s*\(\s*(\d+)\s*\)(.*)")
 
-# ===================== 데이터 로드 =====================
+    def to_min(t):
+        try: h, m = map(int, t.split(':')); return h*60 + m
+        except: return 0
+
+    for p in parts:
+        d_str, start, dur, extra = None, 0, 0, ""
+        
+        if m := p_rng.search(p): # 범위형
+            d_str, s_str, e_str, extra = m.groups()
+            start = to_min(s_str)
+            dur = to_min(e_str) - start
+        elif m := p_dur.search(p): # 분단위형
+            d_str, s_str, dur_str, extra = m.groups()
+            start = to_min(s_str)
+            dur = int(dur_str)
+        else:
+            rooms.append(p) # 시간 패턴이 없으면 장소로 간주
+            continue
+
+        if d_str: last_day = d_str
+        if not last_day: continue
+        
+        # 15분 단위 시간 출력용 포맷
+        end_time_min = start + dur
+        end_time_str = f"{end_time_min // 60:02d}:{end_time_min % 60:02d}"
+        
+        slots.append({'day': yoil_map[last_day], 'start': start, 'end': start + dur})
+        fmt_times.append(f"{last_day} {s_str}~{end_time_str}") # 시작~종료 시간 포맷
+        
+        if extra and extra.strip(): rooms.append(extra.strip())
+
+    room_str = ", ".join(sorted(list(set(rooms))))
+    if not room_str: room_str = ""
+    
+    return slots, ", ".join(fmt_times), room_str
+
+# 데이터 로드
 fixed_courses = []
 for i, d in enumerate(FIXED_SCHEDULE):
-    if s := parse_time(d['time']):
-        fixed_courses.append({**d, 'id':f"maj_{i}", 'area':'전공', 'rating':5.0, 'slots':s, 'type':'major'})
+    s, t, r = parse_data(d['time'])
+    if s: fixed_courses.append({**d, 'id':f"maj_{i}", 'area':'전공', 'rating':0.0, 'slots':s, 'type':'major', 'time_str':t, 'room':r})
 
 courses = []
-for fname, area in [("section1.csv",1),("section2.csv",2),("section3.csv",3),("section4.csv",4),
-                    ("section5.csv",5),("section6.csv",6),("section7.csv",7)]:
-    if os.path.exists(fname):
-        df = pd.read_csv(fname, encoding='cp949').fillna('')
+# Streamlit 환경에서는 CSV 파일 경로를 직접 처리해야 할 수 있습니다. 
+# 여기서는 가정하고 진행합니다. 실제 환경에서는 os.path.exists 확인이 필요합니다.
+for fname, area in FILE_LIST:
+    if not os.path.exists(fname): continue
+    try:
+        enc = 'cp949' if fname.endswith('.csv') else None
+        try: df = pd.read_csv(fname, encoding=enc).fillna('') if enc else pd.read_excel(fname).fillna('')
+        except: df = pd.read_csv(fname, encoding='euc-kr').fillna('')
+            
         for _, r in df.iterrows():
-            try: rating = float(r.get('교양평점', 0))
+            try: rating = float(r.get(COLS['rate']))
             except: rating = 0.0
-            raw_time = str(r.get('시간/강의실', ''))
-            if s := parse_time(raw_time):
-                c_name = str(r.get('교과목명(미확정구분)', '')).strip()
-                c_prof = str(r.get('교수명', '')).strip()
+            
+            s, t, r_str = parse_data(str(r.get(COLS['time'])))
+            if s:
+                c_name = str(r.get(COLS['name'])).strip()
                 courses.append({
-                    'id': len(courses), 'name': c_name, 'prof': c_prof, 'rating': rating,
-                    'area': area, 'slots': s, 'type': 'general',
-                    'search_text': f"{c_name} {AREAS.get(area,'')}"
+                    'id': len(courses), 'name': c_name, 
+                    'prof': str(r.get(COLS['prof'])).strip(),
+                    'rating': rating, 'area': area, 'slots': s, 'type': 'general', 
+                    'time_str': t, 'room': r_str, 'search_text': c_name, 
+                    'match_score': 0.0
                 })
+    except Exception as e: st.error(f"Error loading {fname}: {e}")
 
-st.success(f"전공 {len(fixed_courses)}개 + 교양 {len(courses)}개 로드 완료!")
+st.sidebar.success(f"✅ 전공 {len(fixed_courses)}개, 교양 {len(courses)}개 로드 완료")
 
-# ===================== AI 벡터 =====================
-course_embeddings = model.encode([c['search_text'] for c in courses], convert_to_tensor=True)
+# AI 벡터화
+@st.cache_data
+def get_course_embeddings(courses_list):
+    st.sidebar.info("🔄 데이터 분석 중...")
+    embeddings = model.encode([c['search_text'] for c in courses_list], convert_to_tensor=True)
+    st.sidebar.success("✅ 분석 완료")
+    return embeddings
+course_embeddings = get_course_embeddings(courses)
 
-# ===================== AI 엔진 =====================
-def calculate_scores(user_keyword):
-    for c in courses: c['match_score'] = 0.0
-    if not user_keyword: return
-    query_embedding = model.encode(user_keyword, convert_to_tensor=True)
-    cos_scores = util.cos_sim(query_embedding, course_embeddings)[0]
-    for i, score in enumerate(cos_scores):
-        courses[i]['match_score'] = float(score) * 100.0
-    for c in courses:
-        if user_keyword in c['name']:
-            c['match_score'] += 50.0
+# ===================== [로직 2] AI 엔진 & 스케줄링 =====================
+def calc_score(keyword, courses_list):
+    for c in courses_list: c['match_score'] = 0.0
+    if not keyword: return
 
-def check_overlap(sched):
+    q_vec = model.encode(keyword, convert_to_tensor=True)
+    sims = util.cos_sim(q_vec, course_embeddings)[0].cpu().numpy()
+    
+    for i, s in enumerate(sims):
+        c = courses_list[i]
+        c['match_score'] = float(s) * 100
+        if keyword in c['name']: c['match_score'] += 30 
+
+def check_collision(sched):
     slots = sorted([(s['day'], s['start'], s['end']) for c in sched for s in c['slots']])
     return any(slots[i][0] == slots[i+1][0] and slots[i][2] > slots[i+1][1] for i in range(len(slots)-1))
 
-def run_ai(target_areas, pick_n, user_keyword=""):
-    calculate_scores(user_keyword)
-    pool = [c for c in courses if c['area'] in target_areas]
-    if user_keyword:
-        pool = [c for c in pool if c['match_score'] > 30.0]
-    pool.sort(key=lambda x: -(x['match_score'] * 5 + x['rating']))
-    pool = pool[:50]
+def run_ai(target_areas, pick_n, keyword=""):
+    # courses는 전역 변수를 직접 수정하지 않기 위해 복사본을 사용하여 점수를 계산
+    temp_courses = [c.copy() for c in courses]
+    calc_score(keyword, temp_courses)
+    
+    # 금요일 수업(day 4)은 제외하는 필터링 유지
+    pool = [c for c in temp_courses if c['area'] in target_areas and not any(s['day']==4 for s in c['slots'])]
+    
+    if keyword:
+        filtered = [c for c in pool if c['match_score'] > 40]
+        if not filtered: return []
+        pool = filtered
 
+    pool.sort(key=lambda x: -(x['match_score']*5 + x['rating']))
+    pool = pool[:60]
+    
     results = []
-    for _ in range(2000):
-        picks = random.sample(pool, min(len(pool), pick_n))
+    # 반복 횟수 줄여서 Streamlit에서 빠르게 실행 (Jupyter 2000회 -> Streamlit 1000회 권장)
+    for _ in range(1000): 
         curr = fixed_courses[:]
+        picks = random.sample(pool, min(len(pool), pick_n))
         valid = True
         for p in picks:
-            if any(p['name'] == c['name'] for c in curr) or check_overlap(curr + [p]):
+            if any(p['name'] == c['name'] for c in curr) or check_collision(curr + [p]):
                 valid = False; break
             curr.append(p)
-        if valid:
-            total_score = sum(c['match_score'] for c in picks) * 5 + sum(c['rating'] for c in picks)
-            ids = tuple(sorted(c['id'] for c in picks))
-            results.append({'score': total_score, 'schedule': curr, 'ids': ids})
+            
+        if valid and len(curr) == len(fixed_courses) + pick_n:
+            score = sum(c['match_score']*5 + c['rating'] for c in picks)
+            ids = tuple(sorted(c['id'] for c in curr if c['type']=='general'))
+            results.append({'score': score, 'schedule': curr, 'ids': ids})
+            
     unique = {r['ids']: r for r in results}.values()
     return sorted(unique, key=lambda x: -x['score'])[:3]
 
-# ===================== 완벽한 시간표 (15분 빈 시간 정확히 표시 + 가로선) =====================
-def render_timetable(schedule):
-    PX = 1.3
-    H_START, H_END = 9, 19
-    TOTAL_H = (H_END - H_START) * 60 * PX
-
-    # 1. 수업 시작/종료 분 단위 시각 수집 (정시 제외)
-    specific_times = set()
-    for c in schedule:
-        for s in c['slots']:
-            # 시작 시간이 정시가 아니고 시간 범위 내인 경우
-            if s['start'] % 60 != 0 and H_START * 60 <= s['start'] < H_END * 60:
-                specific_times.add(s['start'])
-            # 종료 시간이 정시가 아니고 시간 범위 내인 경우
-            if s['end'] % 60 != 0 and H_START * 60 < s['end'] <= H_END * 60:
-                specific_times.add(s['end'])
+# ===================== [로직 3] 시각화 & UI =====================
+def render_timetable(sched):
+    PX = 1.3; H_S = 9; H_E = 22  
+    TOTAL_H = (H_E - H_S) * 60 * PX
     
-    # 하루에 모든 슬롯 모으기 (빈 시간 계산용)
-    day_slots = [[] for _ in range(5)]
-    for c in schedule:
+    # 1. 수업 시작/종료 분 단위 시각 수집 (정시 제외) - 정확한 가로줄 표시
+    specific_times = set()
+    for c in sched:
         for s in c['slots']:
-            day_slots[s['day']].append((s['start'], s['end'], c))
-
-    html = f"""<style>
-        .tt-box {{display:flex;font-family:'Malgun Gothic',sans-serif;font-size:12px;border:1px solid #ddd;width:100%}}
-        .tt-col {{position:relative;border-right:1px solid #eee;height:{TOTAL_H}px;flex:1;background:#fafafa}}
-        .tt-card {{position:absolute;width:94%;left:3%;padding:5px;border-radius:6px;box-sizing:border-box;
-                   font-size:11px;line-height:1.3;box-shadow:2px 2px 8px rgba(0,0,0,0.2);text-align:center}}
-        .tt-badge {{font-size:9px;padding:2px 6px;border-radius:4px;margin-bottom:3px;background:rgba(255,255,255,0.8)}}
-        .hour-line {{position:absolute;left:0;width:100%;height:1px;background:#ccc;z-index:1}}
-        /* 분 단위 시작/종료 시각을 표시하는 점선 (dashed line) */
-        .minute-line {{position:absolute;left:0;width:100%;height:1px;background:none;z-index:1;border-top:1px dashed #aaa;}}
-    </style>
-    <div style='display:flex;margin-left:60px;margin-bottom:10px'>
-        {"".join(f"<div style='flex:1;text-align:center;padding:8px;background:#2c3e50;color:white;font-weight:bold'>{d}</div>" for d in "월화수목금")}
-    </div>
-    <div class='tt-box'>
-        <div style='width:60px;background:#f8f9fa;border-right:2px solid #2c3e50;position:relative'>
-            {"".join(f"<div style='position:absolute;top:{(h-H_START)*60*PX}px;width:100%;text-align:right;padding-right:10px;font-size:11px;color:#555'>{h:02d}:00</div>" for h in range(H_START, H_END+1))}
-        </div>"""
-
-    for day in range(5):
-        html += "<div class='tt-col'>"
-        # 2. 정시 가로선 (예: 9:00, 10:00)
-        for h in range(H_START, H_END):
-            html += f"<div class='hour-line' style='top:{(h-H_START)*60*PX}px'></div>"
+            if s['start'] % 60 != 0 and H_S * 60 <= s['start'] < H_E * 60: specific_times.add(s['start'])
+            if s['end'] % 60 != 0 and H_S * 60 < s['end'] <= H_E * 60: specific_times.add(s['end'])
             
-        # 3. 분 단위 시작/종료 시각 가로선 (예: 10:15) - 점선으로 표시
+    html = f"""
+    <style>
+        .tt-con {{ display:flex; font-family:'Malgun Gothic'; font-size:12px; border:1px solid #ccc; width:100%; }}
+        .tt-col {{ position:relative; border-right:1px solid #eee; height:{TOTAL_H}px; flex:1; }}
+        .tt-tm {{ width:60px; background:#fafafa; border-right:1px solid #ccc; position:relative; height:{TOTAL_H}px; }}
+        .tt-lbl {{ position:absolute; width:100%; text-align:right; padding-right:5px; font-size:11px; color:#888; border-top:1px solid #eee; }}
+        .tt-grd {{ position:absolute; width:100%; border-top:1px solid #f4f4f4; }}
+        .minute-line {{ position:absolute; left:0; width:100%; height:1px; background:none; z-index:1; border-top:1px dashed #aaa;}} /* 분 단위 점선 */
+        .tt-crd {{ position:absolute; width:94%; left:3%; padding:2px; border-radius:4px; box-sizing:border-box; 
+                   font-size:10px; line-height:1.2; box-shadow:1px 1px 3px #ddd; display:flex; flex-direction:column; justify-content:center; text-align:center; }}
+    </style>
+    <div style='display:flex; margin-left:60px;'>
+        {''.join([f"<div style='flex:1; text-align:center; padding:5px; background:#f0f0f0; font-weight:bold; border-right:1px solid #fff;'>{d}</div>" for d in "월화수목금"])}
+    </div>
+    <div class='tt-con'>
+        <div class='tt-tm'>
+            {''.join([f"<div class='tt-lbl' style='top:{(h-H_S)*60*PX}px; height:{60*PX}px'>{h:02d}:00</div>" for h in range(H_S, H_E)])}
+        </div>
+    """
+    for d in range(5):
+        html += "<div class='tt-col'>"
+        
+        # 정시 가로선 (예: 9:00, 10:00)
+        html += ''.join([f"<div class='tt-grd' style='top:{(h-H_S)*60*PX}px;'></div>" for h in range(H_S, H_E)])
+        
+        # 분 단위 시작/종료 시각 가로선 (예: 10:15) - 점선으로 표시
         for min_time in sorted(list(specific_times)):
-            top = (min_time - H_START*60) * PX
+            top = (min_time - H_S*60) * PX
             html += f"<div class='minute-line' style='top:{top}px;'></div>"
-
-        # 강의 카드 (빈 시간은 자동으로 비워짐)
-        for c in schedule:
+        
+        for c in sched:
             for s in c['slots']:
-                if s['day'] == day:
-                    top = (s['start'] - H_START*60) * PX
+                if s['day'] == d:
+                    top = (s['start'] - H_S*60) * PX
                     hgt = (s['end'] - s['start']) * PX
+                    
                     if c['type']=='major':
-                        bg, bd, txt, tag = "#e3f2fd","#1976d2","#0d47a1","전공"
-                    elif c.get('match_score',0)>80:
-                        bg, bd, txt, tag = "#ffebee","#d32f2f","#b71c1c","강력추천"
-                    elif c.get('match_score',0)>40:
-                        bg, bd, txt, tag = "#e8f5e9","#388e3c","#1b5e20","AI추천"
+                        sty = ("#e3f2fd","#2196f3","#0d47a1","전공")
                     else:
-                        bg, bd, txt, tag = "#fff3e0","#f57c00","#e65100",AREAS.get(c['area'],'교양')
-                    html += f"<div class='tt-card' style='top:{top}px;height:{hgt}px;background:{bg};border-left:5px solid {bd};color:{txt}'>"
-                    html += f"<div class='tt-badge'>{tag}</div><b>{c['name']}</b><br><small>{c['prof']}</small></div>"
+                        sty = ("#fff3e0","#ff9800","#e65100", AREAS.get(c['area'],'교양'))
+                        if c.get('match_score',0)>60: sty = ("#e8f5e9","#4caf50","#1b5e20","AI추천")
+                        
+                    info = f"<span style='font-size:9px; color:{sty[2]};'>({c.get('room','N/A')})</span>"
+                    time_info = f"<span style='font-size:9px; color:{sty[2]};'>{s['start']//60:02d}:{s['start']%60:02d}~{s['end']//60:02d}:{s['end']%60:02d}</span>"
+                    
+                    html += f"""<div class='tt-crd' style='top:{top}px; height:{hgt}px; background:{sty[0]}; border-left:4px solid {sty[1]}; color:{sty[2]};'>
+                                 <span style='font-size:9px; background:rgba(255,255,255,0.7); padding:1px 4px; border-radius:3px;'>{sty[3]}</span>
+                                 <b>{c['name']}</b><br><span style='font-size:9px;'>{c['prof']}</span><br>{time_info}<br>{info}</div>"""
         html += "</div>"
     html += "</div>"
     return html
 
-# ===================== UI =====================
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("영역 선택")
-    selected = []
-    for k, v in AREAS.items():
-        if st.checkbox(v, key=f"a{k}"):
-            selected.append(k)
-with col2:
-    st.subheader("설정")
-    num = st.selectbox("교양 과목 수", [1,2,3], index=1)
-    keyword = st.text_input("AI 검색", placeholder="예: 운동, 영어, 경제, 코딩")
+# ===================== Streamlit UI =====================
+st.set_page_config(page_title="AI 스마트 시간표", layout="wide")
+st.title("🧠 AI 스마트 시간표 생성기")
+st.markdown("**전공 고정 │ 시간 겹침 0% │ 분 단위 정확한 위치 표시 (점선)**")
 
-if st.button("시간표 생성", type="primary"):
-    if not selected:
-        st.error("영역을 하나 이상 선택해주세요!")
+col_settings, col_areas = st.columns([1, 1.5])
+
+# 영역 선택
+with col_areas:
+    st.subheader("📚 영역 선택")
+    selected_areas = []
+    
+    # 2열로 체크박스 배치
+    cols = st.columns(2)
+    for i, (k, v) in enumerate(AREAS.items()):
+        if cols[i % 2].checkbox(v, key=f"area_{k}", value=False):
+            selected_areas.append(k)
+
+# 설정 및 버튼
+with col_settings:
+    st.subheader("⚙️ 설정")
+    num_courses = st.selectbox("교양 과목 수", [1, 2, 3], index=1, key='num')
+    keyword = st.text_input("AI 검색 키워드 (선택)", placeholder="예: 경제, 운동, 영어", key='key')
+    st.markdown("---")
+    generate_button = st.button("시간표 생성 🚀", type="primary", use_container_width=True)
+
+st.markdown("---")
+
+if generate_button:
+    if not selected_areas:
+        st.error("⚠️ 영역을 하나 이상 선택해주세요!")
     else:
-        with st.spinner("AI가 시간표 만드는 중…"):
-            res = run_ai(selected, num, keyword)
+        with st.spinner("⏳ AI가 최적의 시간표를 분석하고 있습니다..."):
+            res = run_ai(selected_areas, num_courses, keyword)
+        
         if not res:
-            st.error("조건에 맞는 시간표가 없습니다.")
+            st.error("❌ 선택한 조건에 맞는 시간표 조합을 찾을 수 없습니다. (금요일 제외 조건 때문일 수 있습니다.)")
         else:
+            st.success(f"✅ 총 {len(res)}개의 추천 시간표를 찾았습니다.")
+            
             for i, r in enumerate(res):
-                high = any(c.get('match_score',0)>40 for c in r['schedule'] if c['type']=='general')
-                with st.expander(f"추천 {i+1}위 {'(AI 매칭 성공!)' if high else ''}", expanded=True):
+                match = any(c.get('match_score', 0) > 60 for c in r['schedule'] if c['type'] == 'general')
+                title = f"추천 {i+1}위 " + ("(🎯 AI 적중)" if match else "(평점 우수)")
+                
+                with st.expander(title, expanded=(i == 0)):
+                    st.markdown("### 선택된 교양 과목 목록")
                     for c in r['schedule']:
-                        if c['type']=='general':
-                            score = c.get('match_score', 0)
-                            rating = c.get('rating', 0.0)
-                            tag = f"강력추천({int(score)}%)" if score > 80 else (f"AI매칭({int(score)}%)" if score > 40 else "")
-                            
-                            st.write(f"• **{c['name']}** ({c['prof']}) | 평점: **{rating:.2f}** {tag}")
-
-                    components.html(render_timetable(r['schedule']), height=950, scrolling=True)
+                        if c['type'] == 'general':
+                            tag = "✨AI" if c.get('match_score', 0) > 60 else ""
+                            st.write(f"• **{c['name']}** ({c['prof']}) | 평점: **{c['rating']:.2f}** {tag} | 시간: {c['time_str']} | 강의실: {c.get('room','N/A')}")
+                    
+                    st.markdown("### 시간표 시각화")
+                    components.html(render_timetable(r['schedule']), height=850, scrolling=True)
