@@ -1,4 +1,4 @@
-# app.py — 15분 빈 시간 정확히 표시되는 진짜 최종본
+# app.py — 15분 빈 시간 정확히 표시되는 진짜 최종본 (평점 표시 추가)
 import streamlit as st
 import pandas as pd
 import os
@@ -117,6 +117,7 @@ def run_ai(target_areas, pick_n, user_keyword=""):
                 valid = False; break
             curr.append(p)
         if valid:
+            # AI 매칭 점수 * 5 + 평점 * 1 (기존 가중치 유지)
             total_score = sum(c['match_score'] for c in picks) * 5 + sum(c['rating'] for c in picks)
             ids = tuple(sorted(c['id'] for c in picks))
             results.append({'score': total_score, 'schedule': curr, 'ids': ids})
@@ -203,7 +204,11 @@ if st.button("시간표 생성", type="primary"):
                 with st.expander(f"추천 {i+1}위 {'(AI 매칭 성공!)' if high else ''}", expanded=True):
                     for c in r['schedule']:
                         if c['type']=='general':
-                            score = c.get('match_score',0)
-                            tag = f"강력추천({int(score)}%)" if score>80 else (f"AI매칭({int(score)}%)" if score>40 else "")
-                            st.write(f"• {c['name']} ({c['prof']}) {tag}")
+                            score = c.get('match_score', 0)
+                            rating = c.get('rating', 0.0) # 평점 가져오기
+                            tag = f"강력추천({int(score)}%)" if score > 80 else (f"AI매칭({int(score)}%)" if score > 40 else "")
+                            
+                            # 평점 정보와 AI 매칭 태그를 함께 표시
+                            st.write(f"• **{c['name']}** ({c['prof']}) | 평점: **{rating:.2f}** {tag}")
+
                     components.html(render_timetable(r['schedule']), height=950, scrolling=True)
