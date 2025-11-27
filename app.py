@@ -1,4 +1,4 @@
-# app.py - Streamlit 최종본 (물결표 문제 해결)
+# app.py - Streamlit 최종본 (물결표 문제 해결 적용)
 import streamlit as st
 import pandas as pd
 import os
@@ -9,14 +9,14 @@ from sentence_transformers import SentenceTransformer, util
 import streamlit.components.v1 as components
 import time
 
-# ===================== [캐시 무력화 및 CSS 로드] =====================
-# 이 부분을 실행할 때, Streamlit을 Ctrl+C로 껐다가 다시 실행하거나, 
-# 브라우저에서 Ctrl+Shift+R (강제 새로고침)을 시도해 주세요.
+# ===================== [CSS 로드] =====================
+# 외부 CSS를 로드하여 취소선(text-decoration) 문제를 강제로 해결합니다.
 try:
     timestamp = time.time()
     with open("styles.css") as f:
         st.markdown(f'<style href="styles.css?t={timestamp}">{f.read()}</style>', unsafe_allow_html=True)
 except FileNotFoundError:
+    st.warning("⚠️ styles.css 파일을 찾을 수 없습니다. 외부 CSS 파일이 앱 파일과 같은 위치에 있는지 확인하세요.")
     st.markdown("""
         <style>
         * { text-decoration: none !important; }
@@ -62,17 +62,17 @@ def parse_data(raw_str):
 
     for p in parts:
         d_str, start, dur, extra = None, 0, 0, ""
-        s_str_used = ""  # 시작 시간 문자열을 저장할 변수 초기화
+        s_str_used = ""  
         end = 0
         
-        if m := p_rng.search(p): # 범위형 (예: 9:00-10:15)
-            d_str, s_str_raw, e_str_raw, extra = m.groups() # 원본 문자열 확보
+        if m := p_rng.search(p): 
+            d_str, s_str_raw, e_str_raw, extra = m.groups() 
             start = to_min(s_str_raw)
             end = to_min(e_str_raw)
             dur = end - start
             s_str_used = s_str_raw
-        elif m := p_dur.search(p): # 분단위형 (예: 9:00(75))
-            d_str, s_str_raw, dur_str, extra = m.groups() # 원본 문자열 확보
+        elif m := p_dur.search(p): 
+            d_str, s_str_raw, dur_str, extra = m.groups() 
             start = to_min(s_str_raw)
             dur = int(dur_str)
             end = start + dur
@@ -84,10 +84,8 @@ def parse_data(raw_str):
         if d_str: last_day = d_str
         if not last_day or dur <= 0: continue
         
-        # 종료 시간 문자열 포맷팅 (XX:XX 형태)
         end_time_str = f"{end // 60:02d}:{end % 60:02d}"
         
-        # 슬롯 및 시간 문자열 저장 (물결표 명시적으로 포함)
         slots.append({'day': yoil_map[last_day], 'start': start, 'end': end})
         fmt_times.append(f"{last_day} {s_str_used}~{end_time_str}") 
         
@@ -262,7 +260,6 @@ if generate_button:
     if not selected_areas:
         st.error("⚠️ 영역을 하나 이상 선택해주세요!")
     else:
-        # Streamlit 캐시 무력화 안내
         st.info("💡 **주의:** 브라우저에 문제가 있는 경우, **Ctrl + Shift + R**을 눌러 강제 새로고침을 시도해주세요.")
         
         with st.spinner("⏳ AI가 최적의 시간표를 분석하고 있습니다..."):
@@ -282,8 +279,13 @@ if generate_button:
                     for c in r['schedule']:
                         if c['type'] == 'general':
                             tag = "✨AI" if c.get('match_score', 0) > 60 else ""
-                            # time_str은 parse_data에서 물결표가 명시적으로 포함됨
-                            st.write(f"• **{c['name']}** ({c['prof']}) | 평점: **{c['rating']:.2f}** {tag} | 시간: **{c['time_str']}** | 강의실: {c.get('room','N/A')}")
+                            
+                            # 💡 [핵심 수정] st.markdown을 사용하여 time_str을 명시적으로 출력하여 문자열 손상을 방지합니다.
+                            st.markdown(
+                                f"""
+                                • **{c['name']}** ({c['prof']}) | 평점: **{c['rating']:.2f}** {tag} | 시간: **{c['time_str']}** | 강의실: {c.get('room','N/A')}
+                                """
+                            )
                     
                     st.markdown("### 시간표 시각화")
                     components.html(render_timetable(r['schedule']), height=850, scrolling=True)
