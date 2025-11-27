@@ -1,4 +1,4 @@
-# app.py - Streamlit 최종본 (물결표 문제 해결 적용)
+# app.py - Streamlit 최종본 (물결표 이스케이프 적용 완료)
 import streamlit as st
 import pandas as pd
 import os
@@ -280,10 +280,12 @@ if generate_button:
                         if c['type'] == 'general':
                             tag = "✨AI" if c.get('match_score', 0) > 60 else ""
                             
-                            # 💡 [핵심 수정] st.markdown을 사용하여 time_str을 명시적으로 출력하여 문자열 손상을 방지합니다.
+                            # 💡 물결표 이스케이프 처리: 출력 시 물결표가 그대로 보이도록 \~로 치환
+                            time_str_safe = c['time_str'].replace('~', '\~')
+
                             st.markdown(
                                 f"""
-                                • **{c['name']}** ({c['prof']}) | 평점: **{c['rating']:.2f}** {tag} | 시간: **{c['time_str']}** | 강의실: {c.get('room','N/A')}
+                                • **{c['name']}** ({c['prof']}) | 평점: **{c['rating']:.2f}** {tag} | 시간: **{time_str_safe}** | 강의실: {c.get('room','N/A')}
                                 """
                             )
                     
