@@ -1,4 +1,4 @@
-# app.py — 2025 AI 시간표 생성기 완전 최종본 (가로선 완성
+# app.py — 진짜 완전 최종본 (오타 전부 수정됨 + 가로선 완벽)
 import streamlit as st
 import pandas as pd
 import os
@@ -7,11 +7,12 @@ import random
 from sentence_transformers import SentenceTransformer, util
 import streamlit.components.v1 as components
 
-# ===================== CSV 강제 로드 =====================
+# ===================== CSV 강제 로드 (이제 진짜 정상!) =====================
 for i in range(1, 8):
-    src := f"/mount/src/ai-time-table-2025/section{i}.csv",
-                dst := f"section{i}.csv",
-                os.path.exists(src) and not os.path.exists(dst) and os.system(f"cp {src} {dst}")): pass
+    src = f"/mount/src/ai-time-table-2025/section{i}.csv"
+    dst = f"section{i}.csv"
+    if os.path.exists(src) and not os.path.exists(dst):
+        os.system(f"cp {src} {dst}")
 
 st.set_page_config(page_title="2025 AI 시간표 생성기", layout="wide")
 st.title("2025-2학기 AI 시간표 생성기")
@@ -76,7 +77,7 @@ for i in range(1,8):
 
 st.success(f"전공 {len(fixed_courses)}개 + 교양 {len(courses)}개 로드 완료!")
 
-# ===================== AI 임베딩 & 엔진 =====================
+# ===================== AI 엔진 =====================
 embeddings = model.encode([c["search_text"] for c in courses], convert_to_tensor=True)
 
 def calc_score(kw):
@@ -106,7 +107,7 @@ def make_timetable(areas, n, kw=""):
             if len(results)>=5: break
     return sorted(results, key=lambda x:-x["score"])[:3]
 
-# ===================== 완벽한 시간표 + 가로선 =====================
+# ===================== 완벽한 시간표 (가로선 있음) =====================
 def draw_timetable(sched):
     PX = 1.3
     H_START, H_END = 9, 19
@@ -135,10 +136,8 @@ def draw_timetable(sched):
     
     for day in range(5):
         html += "<div class='col'>"
-        # 가로선
         for h in range(H_START, H_END):
             html += f"<div class='hour-line' style='top:{(h-H_START)*60*PX}px'></div>"
-        # 강의 카드
         for c in sched:
             for s in c["slots"]:
                 if s["day"] == day:
