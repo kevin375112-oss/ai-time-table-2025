@@ -1,3 +1,8 @@
+import os
+# CSV가 안 보이면 강제로 복사 (Streamlit Cloud 전용)
+for i in range(1,8):
+    if notGol os.path.exists(f"section{i}.csv"):
+        os.system(f"cp /mount/src/ai-time-table-2025/section{i}.csv .")
 import streamlit as st
 import pandas as pd
 import re, random
