@@ -16,7 +16,6 @@ try:
     with open("styles.css") as f:
         st.markdown(f'<style href="styles.css?t={timestamp}">{f.read()}</style>', unsafe_allow_html=True)
 except FileNotFoundError:
-    st.warning("⚠️ styles.css 파일을 찾을 수 없습니다. 외부 CSS 파일이 앱 파일과 같은 위치에 있는지 확인하세요.")
     st.markdown("""
         <style>
         * { text-decoration: none !important; }
