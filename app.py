@@ -6,7 +6,7 @@ import random
 from sentence_transformers import SentenceTransformer, util
 
 # ─────────────────────────────────────
-# 1. Streamlit Cloud에서 CSV 강제 로드 (이 부분이 핵심!)
+# 1. Streamlit Cloud에서 CSV 강제 로드
 # ─────────────────────────────────────
 for i in range(1, 8):
     src = f"/mount/src/ai-time-table-2025/section{i}.csv"
@@ -22,7 +22,7 @@ st.title("2025-2학기 AI 시간표 생성기")
 st.markdown("**전공 고정 + 교양 자동 추천 + 시간 절대 안 겹침 + AI 키워드 검색**")
 
 # ─────────────────────────────────────
-# 3. AI 모델 로딩 (최초 20~40초)
+# 3. AI 모델 로딩
 # ─────────────────────────────────────
 @st.cache_resource
 def load_model():
@@ -56,7 +56,8 @@ for i in range(1, 8):
             name = str(row.get("교과목명(미확정구분)", "")).strip()
             prof = str(row.get("교수명", "")).strip()
             time = str(row.get("시간/강의실", ""))
-            if name and s := parse_time(time):
+            s = parse_time(time)  # := 대신 이렇게 수정
+            if name and s:  # 조건 분리
                 courses.append({
                     "name": name,
                     "prof": prof,
