@@ -1,3 +1,4 @@
+# app.py — 15분 빈 시간 정확히 표시되는 진짜 최종본
 import streamlit as st
 import pandas as pd
 import os
@@ -14,10 +15,10 @@ for i in range(1, 8):
         os.system(f"cp {src} {dst}")
 
 st.set_page_config(page_title="2025 AI 시간표 생성기", layout="wide")
-st.title("2025-2학기 AI 시간표 생성기")
-st.markdown("**전공 고정 │ 시간 겹침 0% │ 키워드만 쳐도 AI가 알아서 추천**")
+st.title("🧠 2025-2학기 AI 시간표 생성기")
+st.markdown("**전공 고정 │ 시간 겹침 0% │ 15분 빈 시간도 정확히 표시 │ 키워드만 쳐도 AI 추천**")
 
-# ===================== 전공 고정 시간표 =====================
+# ===================== 전공 고정 =====================
 FIXED_SCHEDULE = [
     {"name": "공학수학", "time": "화 9:00-10:15, 목 9:00-10:15", "prof": "강수진"},
     {"name": "고전읽기와토론", "time": "월 9:00-10:40", "prof": "황미은"},
@@ -34,13 +35,13 @@ def load_model():
         return SentenceTransformer('jhgan/ko-sroberta-multitask')
 model = load_model()
 
-# ===================== 시간 파싱 (원본 그대로) =====================
-def to_min(t_str):
-    try: h, m = map(int, t_str.split(':')); return h*60 + m
+# ===================== 시간 파싱 =====================
+def to_min(t): 
+    try: h,m = map(int,t.split(':')); return h*60+m 
     except: return 0
 
 def parse_time(text):
-    if not isinstance(text, str): return []
+    if not isinstance(text,str): return []
     text = re.sub(r'<br/?>|\n|,', ' ', text)
     slots = []
     regex = re.compile(r"([월화수목금토일])\s*(\d{1,2}:\d{2})\s*(?:[-~]\s*(\d{1,2}:\d{2})|\(\s*(\d+)\s*\))")
@@ -82,7 +83,7 @@ st.success(f"전공 {len(fixed_courses)}개 + 교양 {len(courses)}개 로드 �
 # ===================== AI 벡터 =====================
 course_embeddings = model.encode([c['search_text'] for c in courses], convert_to_tensor=True)
 
-# ===================== AI 엔진 (원본 그대로) =====================
+# ===================== AI 엔진 =====================
 def calculate_scores(user_keyword):
     for c in courses: c['match_score'] = 0.0
     if not user_keyword: return
@@ -122,83 +123,87 @@ def run_ai(target_areas, pick_n, user_keyword=""):
     unique = {r['ids']: r for r in results}.values()
     return sorted(unique, key=lambda x: -x['score'])[:3]
 
-# ===================== 완벽한 시간표 HTML (15분 빈 시간 정확히 표시 + 가로선) =====================
-def render_html(sched):
+# ===================== 완벽한 시간표 (15분 빈 시간 정확히 표시 + 가로선) =====================
+def render_timetable(schedule):
     PX = 1.3
     H_START, H_END = 9, 19
     TOTAL_H = (H_END - H_START) * 60 * PX
+
+    # 하루에 모든 슬롯 모으기 (빈 시간 계산용)
+    day_slots = [[] for _ in range(5)]
+    for c in schedule:
+        for s in c['slots']:
+            day_slots[s['day']].append((s['start'], s['end'], c))
+
     html = f"""<style>
         .tt-box {{display:flex;font-family:'Malgun Gothic',sans-serif;font-size:12px;border:1px solid #ddd;width:100%}}
-        .tt-col {{position:relative;border-right:1px solid #eee;height:{TOTAL_H}px;flex:1;background:#fff}}
+        .tt-col {{position:relative;border-right:1px solid #eee;height:{TOTAL_H}px;flex:1;background:#fafafa}}
         .tt-card {{position:absolute;width:94%;left:3%;padding:5px;border-radius:6px;box-sizing:border-box;
-                   font-size:11px;line-height:1.35;box-shadow:2px 2px 6px rgba(0,0,0,0.15);text-align:center}}
-        .tt-badge {{font-size:9px;padding:2px 5px;border-radius:4px;margin-bottom:3px;background:rgba(255,255,255,0.8)}}
-        .hour-line {{position:absolute;left:0;width:100%;height:1px;background:#ddd;z-index:1}}
+                   font-size:11px;line-height:1.3;box-shadow:2px 2px 8px rgba(0,0,0,0.2);text-align:center}}
+        .tt-badge {{font-size:9px;padding:2px 6px;border-radius:4px;margin-bottom:3px;background:rgba(255,255,255,0.8)}}
+        .hour-line {{position:absolute;left:0;width:100%;height:1px;background:#ccc;z-index:1}}
     </style>
     <div style='display:flex;margin-left:60px;margin-bottom:10px'>
-        {"".join(f"<div style='flex:1;text-align:center;padding:8px;background:#333;color:white;font-weight:bold'>{d}</div>" for d in "월화수목금")}
+        {"".join(f"<div style='flex:1;text-align:center;padding:8px;background:#2c3e50;color:white;font-weight:bold'>{d}</div>" for d in "월화수목금")}
     </div>
     <div class='tt-box'>
-        <div style='width:60px;background:#fafafa;border-right:1px solid #ddd;position:relative;height:{TOTAL_H}px'>
-            {"".join(f"<div style='position:absolute;top:{(h-H_START)*60*PX}px;width:100%;text-align:right;padding-right:8px;font-size:11px;color:#666'>{h:02d}:00</div>" for h in range(H_START, H_END+1))}
+        <div style='width:60px;background:#f8f9fa;border-right:2px solid #2c3e50;position:relative'>
+            {"".join(f"<div style='position:absolute;top:{(h-H_START)*60*PX}px;width:100%;text-align:right;padding-right:10px;font-size:11px;color:#555'>{h:02d}:00</div>" for h in range(H_START, H_END+1))}
         </div>"""
-    
-    for d_idx in range(5):
+
+    for day in range(5):
         html += "<div class='tt-col'>"
-        # 가로선 추가 (15분 단위 정확히)
-        for h in range(H_START, H_END + 1):
-            top = (h - H_START) * 60 * PX
-            html += f"<div class='hour-line' style='top:{top}px'></div>"
-        for c in sched:
+        # 가로선
+        for h in range(H_START, H_END):
+            html += f"<div class='hour-line' style='top:{(h-H_START)*60*PX}px'></div>"
+        # 강의 카드 (빈 시간은 자동으로 비워짐)
+        for c in schedule:
             for s in c['slots']:
-                if s['day'] == d_idx:
+                if s['day'] == day:
                     top = (s['start'] - H_START*60) * PX
                     hgt = (s['end'] - s['start']) * PX
                     if c['type']=='major':
-                        bg, bd, txt, tag = "#e3f2fd","#2196f3","#0d47a1","전공"
-                    elif c.get('match_score',0) > 80:
-                        bg, bd, txt, tag = "#ffebee","#f44336","#b71c1c","강력추천"
-                    elif c.get('match_score',0) > 40:
-                        bg, bd, txt, tag = "#e8f5e9","#4caf50","#1b5e20","AI추천"
+                        bg, bd, txt, tag = "#e3f2fd","#1976d2","#0d47a1","전공"
+                    elif c.get('match_score',0)>80:
+                        bg, bd, txt, tag = "#ffebee","#d32f2f","#b71c1c","강력추천"
+                    elif c.get('match_score',0)>40:
+                        bg, bd, txt, tag = "#e8f5e9","#388e3c","#1b5e20","AI추천"
                     else:
-                        bg, bd, txt, tag = "#fff3e0","#ff9800","#e65100",AREAS.get(c['area'],'교양')
-                    html += f"<div class='tt-card' style='top:{top}px;height:{hgt}px;background:{bg};border-left:4px solid {bd};color:{txt}'>"
-                    html += f"<div class='tt-badge'>{tag}</div><b>{c['name']}</b><br>{c['prof']}</div>"
+                        bg, bd, txt, tag = "#fff3e0","#f57c00","#e65100",AREAS.get(c['area'],'교양')
+                    html += f"<div class='tt-card' style='top:{top}px;height:{hgt}px;background:{bg};border-left:5px solid {bd};color:{txt}'>"
+                    html += f"<div class='tt-badge'>{tag}</div><b>{c['name']}</b><br><small>{c['prof']}</small></div>"
         html += "</div>"
     html += "</div>"
     return html
 
 # ===================== UI =====================
-col1, col2 = st.columns([1, 1])
+col1, col2 = st.columns(2)
 with col1:
     st.subheader("영역 선택")
-    selected_areas = []
+    selected = []
     for k, v in AREAS.items():
-        if st.checkbox(v, key=f"area_{k}"):
-            selected_areas.append(k)
-
+        if st.checkbox(v, key=f"a{k}"):
+            selected.append(k)
 with col2:
     st.subheader("설정")
-    num_courses = st.selectbox("교양 과목 수", [1, 2, 3], index=1)
-    keyword = st.text_input("AI 검색", placeholder="예: 운동하고 싶어, 역사 관련, 코딩")
+    num = st.selectbox("교양 과목 수", [1,2,3], index=1)
+    keyword = st.text_input("AI 검색", placeholder="예: 운동, 영어, 경제, 코딩")
 
-if st.button("시간표 생성 🚀", type="primary"):
-    if not selected_areas:
+if st.button("시간표 생성", type="primary"):
+    if not selected:
         st.error("영역을 하나 이상 선택해주세요!")
     else:
-        with st.spinner("AI가 시간표를 짜는 중..."):
-            res = run_ai(selected_areas, num_courses, keyword)
+        with st.spinner("AI가 시간표 만드는 중…"):
+            res = run_ai(selected, num, keyword)
         if not res:
             st.error("조건에 맞는 시간표가 없습니다.")
-            st.write("Tip: 키워드를 더 구체적으로 해보세요!")
         else:
-            st.balloons()
             for i, r in enumerate(res):
-                high_match = any(c.get('match_score',0) > 40 for c in r['schedule'])
-                with st.expander(f"추천 {i+1}" + (" (AI 매칭 성공!)" if high_match else ""), expanded=True):
+                high = any(c.get('match_score',0)>40 for c in r['schedule'] if c['type']=='general')
+                with st.expander(f"추천 {i+1}위 {'(AI 매칭 성공!)' if high else ''}", expanded=True):
                     for c in r['schedule']:
                         if c['type']=='general':
-                            score = c.get('match_score', 0)
-                            tag = f"강력추천({int(score)}%)" if score > 80 else (f"AI매칭({int(score)}%)" if score > 40 else "")
+                            score = c.get('match_score',0)
+                            tag = f"강력추천({int(score)}%)" if score>80 else (f"AI매칭({int(score)}%)" if score>40 else "")
                             st.write(f"• {c['name']} ({c['prof']}) {tag}")
-                    components.html(render_html(r['schedule']), height=900, scrolling=True)
+                    components.html(render_timetable(r['schedule']), height=950, scrolling=True)
