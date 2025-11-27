@@ -1,4 +1,4 @@
-# app.py - Streamlit 최종본 (모든 문제 해결 완료)
+# app.py - Streamlit 최종본 (물결표 문제 및 모든 요청 해결)
 import streamlit as st
 import pandas as pd
 import os
@@ -7,18 +7,16 @@ import random
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 import streamlit.components.v1 as components
-import time # 캐시 무력화를 위해 time 모듈 추가
+import time
 
 # ===================== [CSS 로드] =====================
 # 외부 CSS를 로드하여 취소선(text-decoration) 문제를 강제로 해결합니다.
 try:
     timestamp = time.time()
     with open("styles.css") as f:
-        # 캐시 무력화를 위해 timestamp를 사용하여 CSS를 강제로 로드
         st.markdown(f'<style href="styles.css?t={timestamp}">{f.read()}</style>', unsafe_allow_html=True)
 except FileNotFoundError:
     st.warning("⚠️ styles.css 파일을 찾을 수 없습니다. 외부 CSS 파일이 앱 파일과 같은 위치에 있는지 확인하세요.")
-    # 파일이 없을 경우, 인라인으로 강제 적용
     st.markdown("""
         <style>
         * { text-decoration: none !important; }
@@ -47,36 +45,57 @@ def load_model():
 model = load_model()
 
 def parse_data(raw_str):
+    """ 시간/장소/슬롯 데이터 추출 (물결표 문제 해결) """
     if not isinstance(raw_str, str): return [], "", ""
+    
     parts = [p.strip() for p in re.sub(r'<br/?>|\n', ',', raw_str).split(',') if p.strip()]
     slots, fmt_times, rooms = [], [], []
     last_day = None
     yoil_map = {d:i for i,d in enumerate("월화수목금토일")}
+    
     p_rng = re.compile(r"([월화수목금토일])?\s*(\d{1,2}:\d{2})\s*[-~]\s*(\d{1,2}:\d{2})(.*)")
     p_dur = re.compile(r"([월화수목금토일])?\s*(\d{1,2}:\d{2})\s*\(\s*(\d+)\s*\)(.*)")
+
     def to_min(t):
         try: h, m = map(int, t.split(':')); return h*60 + m
         except: return 0
+
     for p in parts:
         d_str, start, dur, extra = None, 0, 0, ""
-        if m := p_rng.search(p):
+        s_str_used = ""  # 시작 시간 문자열을 저장할 변수 초기화
+        end = 0
+        
+        if m := p_rng.search(p): # 범위형 (예: 9:00-10:15)
             d_str, s_str, e_str, extra = m.groups()
             start = to_min(s_str)
-            dur = to_min(e_str) - start
-        elif m := p_dur.search(p):
+            end = to_min(e_str)
+            dur = end - start
+            s_str_used = s_str
+        elif m := p_dur.search(p): # 분단위형 (예: 9:00(75))
             d_str, s_str, dur_str, extra = m.groups()
             start = to_min(s_str)
             dur = int(dur_str)
-        else: rooms.append(p); continue
+            end = start + dur
+            s_str_used = s_str
+        else:
+            rooms.append(p)
+            continue
+
         if d_str: last_day = d_str
-        if not last_day: continue
-        end_time_min = start + dur
-        end_time_str = f"{end_time_min // 60:02d}:{end_time_min % 60:02d}"
-        slots.append({'day': yoil_map[last_day], 'start': start, 'end': start + dur})
-        fmt_times.append(f"{last_day} {s_str}~{end_time_str}")
+        if not last_day or dur <= 0: continue
+        
+        # 종료 시간 문자열 포맷팅 (XX:XX 형태)
+        end_time_str = f"{end // 60:02d}:{end % 60:02d}"
+        
+        # 슬롯 및 시간 문자열 저장 (물결표 명시적으로 포함)
+        slots.append({'day': yoil_map[last_day], 'start': start, 'end': end})
+        fmt_times.append(f"{last_day} {s_str_used}~{end_time_str}") 
+        
         if extra and extra.strip(): rooms.append(extra.strip())
+
     room_str = ", ".join(sorted(list(set(rooms))))
     if not room_str: room_str = ""
+    
     return slots, ", ".join(fmt_times), room_str
 
 # 데이터 로드
@@ -205,7 +224,7 @@ def render_timetable(sched):
                         
                     info = f"<span style='font-size:9px; color:{sty[2]};'>({c.get('room','N/A')})</span>"
                     
-                    # text-decoration: none;을 포함하여 취소선 방지 (외부 CSS에서 !important로 최종 보강됨)
+                    # text-decoration: none;을 포함하여 취소선 방지
                     time_info = f"<span style='font-size:9px; color:{sty[2]}; text-decoration: none;'>{s['start']//60:02d}:{s['start']%60:02d}~{s['end']//60:02d}:{s['end']%60:02d}</span>"
                     
                     html += f"""<div class='tt-crd' style='top:{top}px; height:{hgt}px; background:{sty[0]}; border-left:4px solid {sty[1]}; color:{sty[2]};'>
