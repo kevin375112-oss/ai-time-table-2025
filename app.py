@@ -233,13 +233,13 @@ def render_timetable(sched):
 
 # ===================== Streamlit UI =====================
 st.set_page_config(page_title="AI 스마트 시간표", layout="wide")
-st.title("🧠 AI 스마트 시간표 생성기")
+st.title("AI 스마트 시간표 생성기")
 st.markdown("**전공 고정 │ 시간 겹침 0% │ 깔끔한 그리드**")
 
 col_settings, col_areas = st.columns([1, 1.5])
 
 with col_areas:
-    st.subheader("📚 영역 선택")
+    st.subheader("영역 선택")
     selected_areas = []
     cols = st.columns(2)
     for i, (k, v) in enumerate(AREAS.items()):
@@ -271,7 +271,7 @@ if generate_button:
             
             for i, r in enumerate(res):
                 match = any(c.get('match_score', 0) > 60 for c in r['schedule'] if c['type'] == 'general')
-                title = f"추천 {i+1}위 " + ("(🎯 AI 적중)" if match else "(평점 우수)")
+                title = f"추천 {i+1}위 " + ("(AI 적중)" if match else "(평점 우수)")
                 
                 with st.expander(title, expanded=(i == 0)):
                     st.markdown("### 선택된 교양 과목 목록")
