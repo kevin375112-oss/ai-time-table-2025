@@ -1,4 +1,4 @@
-# app.py - Streamlit 변환 최종본
+# app.py - Streamlit 변환 최종본 (분 단위 점선 제거)
 import streamlit as st
 import pandas as pd
 import os
@@ -24,6 +24,13 @@ AREAS = {1:"사상/역사", 2:"사회/문화", 3:"문학/예술", 4:"과학/기�
 COLS = {'name':'교과목명(미확정구분)', 'time':'시간/강의실', 'prof':'교수명', 'rate':'교양평점'}
 
 # ===================== [로직 1] 데이터 파싱 및 로드 =====================
+# Streamlit 환경에서는 CSV 파일 강제 로드 로직 제거 (로컬 환경에 맞춰 실행)
+# for i in range(1, 8):
+#     src = f"/mount/src/ai-time-table-2025/section{i}.csv"
+#     dst = f"section{i}.csv"
+#     if os.path.exists(src) and not os.path.exists(dst):
+#         os.system(f"cp {src} {dst}")
+
 @st.cache_resource
 def load_model():
     with st.spinner("🤖 AI 모델 로딩 중... (최초 실행 시 시간이 걸릴 수 있습니다.)"):
@@ -64,12 +71,11 @@ def parse_data(raw_str):
         if d_str: last_day = d_str
         if not last_day: continue
         
-        # 15분 단위 시간 출력용 포맷
         end_time_min = start + dur
         end_time_str = f"{end_time_min // 60:02d}:{end_time_min % 60:02d}"
         
         slots.append({'day': yoil_map[last_day], 'start': start, 'end': start + dur})
-        fmt_times.append(f"{last_day} {s_str}~{end_time_str}") # 시작~종료 시간 포맷
+        fmt_times.append(f"{last_day} {s_str}~{end_time_str}")
         
         if extra and extra.strip(): rooms.append(extra.strip())
 
@@ -85,8 +91,6 @@ for i, d in enumerate(FIXED_SCHEDULE):
     if s: fixed_courses.append({**d, 'id':f"maj_{i}", 'area':'전공', 'rating':0.0, 'slots':s, 'type':'major', 'time_str':t, 'room':r})
 
 courses = []
-# Streamlit 환경에서는 CSV 파일 경로를 직접 처리해야 할 수 있습니다. 
-# 여기서는 가정하고 진행합니다. 실제 환경에서는 os.path.exists 확인이 필요합니다.
 for fname, area in FILE_LIST:
     if not os.path.exists(fname): continue
     try:
@@ -139,11 +143,9 @@ def check_collision(sched):
     return any(slots[i][0] == slots[i+1][0] and slots[i][2] > slots[i+1][1] for i in range(len(slots)-1))
 
 def run_ai(target_areas, pick_n, keyword=""):
-    # courses는 전역 변수를 직접 수정하지 않기 위해 복사본을 사용하여 점수를 계산
     temp_courses = [c.copy() for c in courses]
     calc_score(keyword, temp_courses)
     
-    # 금요일 수업(day 4)은 제외하는 필터링 유지
     pool = [c for c in temp_courses if c['area'] in target_areas and not any(s['day']==4 for s in c['slots'])]
     
     if keyword:
@@ -155,7 +157,6 @@ def run_ai(target_areas, pick_n, keyword=""):
     pool = pool[:60]
     
     results = []
-    # 반복 횟수 줄여서 Streamlit에서 빠르게 실행 (Jupyter 2000회 -> Streamlit 1000회 권장)
     for _ in range(1000): 
         curr = fixed_courses[:]
         picks = random.sample(pool, min(len(pool), pick_n))
@@ -178,12 +179,7 @@ def render_timetable(sched):
     PX = 1.3; H_S = 9; H_E = 22  
     TOTAL_H = (H_E - H_S) * 60 * PX
     
-    # 1. 수업 시작/종료 분 단위 시각 수집 (정시 제외) - 정확한 가로줄 표시
-    specific_times = set()
-    for c in sched:
-        for s in c['slots']:
-            if s['start'] % 60 != 0 and H_S * 60 <= s['start'] < H_E * 60: specific_times.add(s['start'])
-            if s['end'] % 60 != 0 and H_S * 60 < s['end'] <= H_E * 60: specific_times.add(s['end'])
+    # 분 단위 시각 수집 로직 제거 (요청에 따라 점선 표시 로직 삭제)
             
     html = f"""
     <style>
@@ -192,7 +188,7 @@ def render_timetable(sched):
         .tt-tm {{ width:60px; background:#fafafa; border-right:1px solid #ccc; position:relative; height:{TOTAL_H}px; }}
         .tt-lbl {{ position:absolute; width:100%; text-align:right; padding-right:5px; font-size:11px; color:#888; border-top:1px solid #eee; }}
         .tt-grd {{ position:absolute; width:100%; border-top:1px solid #f4f4f4; }}
-        .minute-line {{ position:absolute; left:0; width:100%; height:1px; background:none; z-index:1; border-top:1px dashed #aaa;}} /* 분 단위 점선 */
+        /* .minute-line 스타일 제거 */
         .tt-crd {{ position:absolute; width:94%; left:3%; padding:2px; border-radius:4px; box-sizing:border-box; 
                    font-size:10px; line-height:1.2; box-shadow:1px 1px 3px #ddd; display:flex; flex-direction:column; justify-content:center; text-align:center; }}
     </style>
@@ -210,10 +206,7 @@ def render_timetable(sched):
         # 정시 가로선 (예: 9:00, 10:00)
         html += ''.join([f"<div class='tt-grd' style='top:{(h-H_S)*60*PX}px;'></div>" for h in range(H_S, H_E)])
         
-        # 분 단위 시작/종료 시각 가로선 (예: 10:15) - 점선으로 표시
-        for min_time in sorted(list(specific_times)):
-            top = (min_time - H_S*60) * PX
-            html += f"<div class='minute-line' style='top:{top}px;'></div>"
+        # 분 단위 시작/종료 시각 가로선 추가 로직 제거 (요청에 따라 삭제)
         
         for c in sched:
             for s in c['slots']:
@@ -228,6 +221,7 @@ def render_timetable(sched):
                         if c.get('match_score',0)>60: sty = ("#e8f5e9","#4caf50","#1b5e20","AI추천")
                         
                     info = f"<span style='font-size:9px; color:{sty[2]};'>({c.get('room','N/A')})</span>"
+                    # 카드 내부의 시간 정보는 유지
                     time_info = f"<span style='font-size:9px; color:{sty[2]};'>{s['start']//60:02d}:{s['start']%60:02d}~{s['end']//60:02d}:{s['end']%60:02d}</span>"
                     
                     html += f"""<div class='tt-crd' style='top:{top}px; height:{hgt}px; background:{sty[0]}; border-left:4px solid {sty[1]}; color:{sty[2]};'>
@@ -240,7 +234,7 @@ def render_timetable(sched):
 # ===================== Streamlit UI =====================
 st.set_page_config(page_title="AI 스마트 시간표", layout="wide")
 st.title("🧠 AI 스마트 시간표 생성기")
-st.markdown("**전공 고정 │ 시간 겹침 0% │ 분 단위 정확한 위치 표시 (점선)**")
+st.markdown("**전공 고정 │ 시간 겹침 0% │ 깔끔한 그리드**")
 
 col_settings, col_areas = st.columns([1, 1.5])
 
@@ -249,7 +243,6 @@ with col_areas:
     st.subheader("📚 영역 선택")
     selected_areas = []
     
-    # 2열로 체크박스 배치
     cols = st.columns(2)
     for i, (k, v) in enumerate(AREAS.items()):
         if cols[i % 2].checkbox(v, key=f"area_{k}", value=False):
