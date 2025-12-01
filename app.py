@@ -1,4 +1,4 @@
-# app.py - Streamlit 최종본 (물결표 이스케이프 적용 완료)
+# app.py - Streamlit 최종 변환 코드
 import streamlit as st
 import pandas as pd
 import os
@@ -10,12 +10,13 @@ import streamlit.components.v1 as components
 import time
 
 # ===================== [CSS 로드] =====================
-# 외부 CSS를 로드하여 취소선(text-decoration) 문제를 강제로 해결합니다.
+# 외부 CSS를 로드하여 취소선 등 스타일 문제를 강제로 해결합니다.
 try:
     timestamp = time.time()
     with open("styles.css") as f:
         st.markdown(f'<style href="styles.css?t={timestamp}">{f.read()}</style>', unsafe_allow_html=True)
 except FileNotFoundError:
+    # styles.css 파일이 없는 경우 대체 스타일 적용
     st.markdown("""
         <style>
         * { text-decoration: none !important; }
@@ -30,8 +31,9 @@ FIXED_SCHEDULE = [
     {"name": "일반화학2", "time": "월 15:00-16:15 507-101, 수 15:00-16:15 507-101", "prof": "조혜진"},
     {"name": "인공지능프로그래밍", "time": "화 13:30-14:45 314-204-2, 목 13:30-14:45 314-204-2", "prof": "이휘돈"},
     {"name": "일반물리학2", "time": "화 16:30-17:45 507-102, 목 16:30-17:45 507-102", "prof": "양하늬"},
+    {"name": "나노융합전공실험2", "time": "금 9:00-13:00 709-101", "prof": "엄태중"},
 ]
-AREAS = {1:"사상/역사", 2:"사회/문화", 3:"문학/예술", 4:"과학/기술", 5:"건강/레포츠", 6:"외국어", 7:"융복합"}
+AREAS = {1:"1.사상과역사", 2:"2.사회와문화", 3:"3.문학과예술", 4:"4.과학과기술", 5:"5.건강과레포츠", 6:"6.외국어", 7:"7.융복합"}
 FILE_LIST = [("section1.csv",1),("section2.csv",2),("section3.csv",3),("section4.csv",4),
              ("section5.csv",5),("section6.csv",6),("section7.csv",7)]
 COLS = {'name':'교과목명(미확정구분)', 'time':'시간/강의실', 'prof':'교수명', 'rate':'교양평점'}
@@ -44,7 +46,7 @@ def load_model():
 model = load_model()
 
 def parse_data(raw_str):
-    """ 시간/장소/슬롯 데이터 추출 (물결표 문제 해결) """
+    """ 시간/장소/슬롯 데이터 추출 (time_str을 위해 종료 시간 포함) """
     if not isinstance(raw_str, str): return [], "", ""
     
     parts = [p.strip() for p in re.sub(r'<br/?>|\n', ',', raw_str).split(',') if p.strip()]
@@ -61,7 +63,7 @@ def parse_data(raw_str):
 
     for p in parts:
         d_str, start, dur, extra = None, 0, 0, ""
-        s_str_used = ""  
+        s_str_used = ""
         end = 0
         
         if m := p_rng.search(p): 
@@ -85,6 +87,7 @@ def parse_data(raw_str):
         
         end_time_str = f"{end // 60:02d}:{end % 60:02d}"
         
+        # 목록 출력을 위해 '월 9:00~10:40' 형태로 저장 (물결표 포함)
         slots.append({'day': yoil_map[last_day], 'start': start, 'end': end})
         fmt_times.append(f"{last_day} {s_str_used}~{end_time_str}") 
         
@@ -96,33 +99,38 @@ def parse_data(raw_str):
     return slots, ", ".join(fmt_times), room_str
 
 # 데이터 로드
-fixed_courses = []
-for i, d in enumerate(FIXED_SCHEDULE):
-    s, t, r = parse_data(d['time'])
-    if s: fixed_courses.append({**d, 'id':f"maj_{i}", 'area':'전공', 'rating':0.0, 'slots':s, 'type':'major', 'time_str':t, 'room':r})
+@st.cache_data
+def load_courses():
+    fixed_courses = []
+    for i, d in enumerate(FIXED_SCHEDULE):
+        s, t, r = parse_data(d['time'])
+        if s: fixed_courses.append({**d, 'id':f"maj_{i}", 'area':'전공', 'rating':0.0, 'slots':s, 'type':'major', 'time_str':t, 'room':r})
 
-courses = []
-for fname, area in FILE_LIST:
-    if not os.path.exists(fname): continue
-    try:
-        enc = 'cp949' if fname.endswith('.csv') else None
-        try: df = pd.read_csv(fname, encoding=enc).fillna('') if enc else pd.read_excel(fname).fillna('')
-        except: df = pd.read_csv(fname, encoding='euc-kr').fillna('')
-        for _, r in df.iterrows():
-            try: rating = float(r.get(COLS['rate']))
-            except: rating = 0.0
-            s, t, r_str = parse_data(str(r.get(COLS['time'])))
-            if s:
-                c_name = str(r.get(COLS['name'])).strip()
-                courses.append({
-                    'id': len(courses), 'name': c_name, 
-                    'prof': str(r.get(COLS['prof'])).strip(),
-                    'rating': rating, 'area': area, 'slots': s, 'type': 'general', 
-                    'time_str': t, 'room': r_str, 'search_text': c_name, 
-                    'match_score': 0.0
-                })
-    except Exception as e: st.error(f"Error loading {fname}: {e}")
+    courses = []
+    for fname, area in FILE_LIST:
+        if not os.path.exists(fname): continue
+        try:
+            enc = 'cp949' if fname.endswith('.csv') else None
+            try: df = pd.read_csv(fname, encoding=enc).fillna('') if enc else pd.read_excel(fname).fillna('')
+            except: df = pd.read_csv(fname, encoding='euc-kr').fillna('')
+            for _, r in df.iterrows():
+                try: rating = float(r.get(COLS['rate']))
+                except: rating = 0.0
+                s, t, r_str = parse_data(str(r.get(COLS['time'])))
+                if s:
+                    c_name = str(r.get(COLS['name'])).strip()
+                    courses.append({
+                        'id': len(courses), 'name': c_name, 
+                        'prof': str(r.get(COLS['prof'])).strip(),
+                        'rating': rating, 'area': area, 'slots': s, 'type': 'general', 
+                        'time_str': t, 'room': r_str, 'search_text': c_name, 
+                        'match_score': 0.0
+                    })
+        except Exception as e: st.error(f"Error loading {fname}: {e}")
+    
+    return fixed_courses, courses
 
+fixed_courses, courses = load_courses()
 st.sidebar.success(f"✅ 전공 {len(fixed_courses)}개, 교양 {len(courses)}개 로드 완료")
 
 # AI 벡터화
@@ -152,15 +160,22 @@ def check_collision(sched):
 def run_ai(target_areas, pick_n, keyword=""):
     temp_courses = [c.copy() for c in courses]
     calc_score(keyword, temp_courses)
+    
+    # 금요일(day 4)에 전공이 있으므로, 교양은 금요일 수업 제외 로직 유지
     pool = [c for c in temp_courses if c['area'] in target_areas and not any(s['day']==4 for s in c['slots'])]
+    
     if keyword:
-        filtered = [c for c in pool if c['match_score'] > 40]
+        filtered = [c for c in pool if c['match_score'] > 42]
+        if not filtered: 
+            filtered = [c for c in pool if c['match_score'] > 37]
         if not filtered: return []
         pool = filtered
+
     pool.sort(key=lambda x: -(x['match_score']*5 + x['rating']))
-    pool = pool[:60]
+    pool = pool[:30] # 후보군 30개로 제한
+    
     results = []
-    for _ in range(1000): 
+    for _ in range(2000): # 2000번의 무작위 탐색 시도
         curr = fixed_courses[:]
         picks = random.sample(pool, min(len(pool), pick_n))
         valid = True
@@ -172,6 +187,7 @@ def run_ai(target_areas, pick_n, keyword=""):
             score = sum(c['match_score']*5 + c['rating'] for c in picks)
             ids = tuple(sorted(c['id'] for c in curr if c['type']=='general'))
             results.append({'score': score, 'schedule': curr, 'ids': ids})
+            
     unique = {r['ids']: r for r in results}.values()
     return sorted(unique, key=lambda x: -x['score'])[:3]
 
@@ -185,10 +201,8 @@ def render_timetable(sched):
         .tt-con {{ display:flex; font-family:'Malgun Gothic'; font-size:12px; border:1px solid #ccc; width:100%; }}
         .tt-col {{ position:relative; border-right:1px solid #eee; height:{TOTAL_H}px; flex:1; }}
         .tt-tm {{ width:60px; background:#fafafa; border-right:1px solid #ccc; position:relative; height:{TOTAL_H}px; }}
-        /* time label의 border-top 제거 */
         .tt-lbl {{ position:absolute; width:100%; text-align:right; padding-right:5px; font-size:11px; color:#888; border-top:none; }} 
         .tt-grd {{ position:absolute; width:100%; border-top:1px solid #f4f4f4; }}
-        /* 강의 카드에 z-index를 부여하여 격자선 위에 표시 */
         .tt-crd {{ position:absolute; width:94%; left:3%; padding:2px; border-radius:4px; box-sizing:border-box; 
                    font-size:10px; line-height:1.2; box-shadow:1px 1px 3px #ddd; display:flex; flex-direction:column; justify-content:center; text-align:center; 
                    z-index: 10; }} 
@@ -204,7 +218,6 @@ def render_timetable(sched):
     for d in range(5):
         html += "<div class='tt-col'>"
         
-        # 정시 가로선 (격자선)
         html += ''.join([f"<div class='tt-grd' style='top:{(h-H_S)*60*PX}px;'></div>" for h in range(H_S, H_E)])
         
         for c in sched:
@@ -221,7 +234,6 @@ def render_timetable(sched):
                         
                     info = f"<span style='font-size:9px; color:{sty[2]};'>({c.get('room','N/A')})</span>"
                     
-                    # text-decoration: none;을 포함하여 취소선 방지
                     time_info = f"<span style='font-size:9px; color:{sty[2]}; text-decoration: none;'>{s['start']//60:02d}:{s['start']%60:02d}~{s['end']//60:02d}:{s['end']%60:02d}</span>"
                     
                     html += f"""<div class='tt-crd' style='top:{top}px; height:{hgt}px; background:{sty[0]}; border-left:4px solid {sty[1]}; color:{sty[2]};'>
@@ -232,16 +244,24 @@ def render_timetable(sched):
     return html
 
 # ===================== Streamlit UI =====================
-st.set_page_config(page_title="광메카 1학년을 위한 시간표 생성기", layout="wide")
-st.title("광메카 1학년을 위한 시간표 생성기")
+st.set_page_config(page_title="AI 스마트 시간표", layout="wide")
+st.title("🧠 AI 스마트 시간표 생성기")
+st.markdown("**전공 고정 │ 시간 겹침 0% │ 깔끔한 그리드**")
 
 col_settings, col_areas = st.columns([1, 1.5])
 
 with col_areas:
-    st.subheader("영역 선택")
+    st.subheader("📚 영역 선택")
     selected_areas = []
+    
+    # 체크박스의 description은 "1.사상과역사"와 같이 문자열로 되어 있으므로,
+    # 해당 문자열을 기반으로 AREAS 딕셔너리의 키(1, 2, 3...)를 찾는 로직이 필요합니다.
+    # 하지만 여기서는 간편하게 Areas 딕셔너리의 키를 그대로 사용합니다.
+    
     cols = st.columns(2)
-    for i, (k, v) in enumerate(AREAS.items()):
+    area_keys = list(AREAS.keys())
+    for i, k in enumerate(area_keys):
+        v = AREAS[k]
         if cols[i % 2].checkbox(v, key=f"area_{k}", value=False):
             selected_areas.append(k)
 
@@ -269,14 +289,15 @@ if generate_button:
             st.success(f"✅ 총 {len(res)}개의 추천 시간표를 찾았습니다.")
             
             for i, r in enumerate(res):
-                match = any(c.get('match_score', 0) > 60 for c in r['schedule'] if c['type'] == 'general')
-                title = f"추천 {i+1}위 " + ("(AI 적중)" if match else "(평점 우수)")
+                # 매칭 점수 40 초과 시 AI 추천 태그 (기존 ipywidgets 로직 유지)
+                match = any(c.get('match_score', 0) > 40 for c in r['schedule'] if c['type'] == 'general')
+                title = f"추천 {i+1}위 " + ("(🎯 AI 추천)" if match else "(평점 추천)")
                 
                 with st.expander(title, expanded=(i == 0)):
                     st.markdown("### 선택된 교양 과목 목록")
                     for c in r['schedule']:
                         if c['type'] == 'general':
-                            tag = "✨AI" if c.get('match_score', 0) > 60 else ""
+                            tag = "✨AI" if c.get('match_score', 0) > 42 else ""
                             
                             # 💡 물결표 이스케이프 처리: 출력 시 물결표가 그대로 보이도록 \~로 치환
                             time_str_safe = c['time_str'].replace('~', '\~')
