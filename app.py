@@ -41,7 +41,7 @@ COLS = {'name':'교과목명(미확정구분)', 'time':'시간/강의실', 'prof
 # ===================== [로직 1] 데이터 파싱 및 로드 =====================
 @st.cache_resource
 def load_model():
-    with st.spinner("🤖 AI 모델 로딩 중..."):
+    with st.spinner(" AI 모델 로딩 중..."):
         return SentenceTransformer('jhgan/ko-sroberta-multitask')
 model = load_model()
 
@@ -245,13 +245,12 @@ def render_timetable(sched):
 
 # ===================== Streamlit UI =====================
 st.set_page_config(page_title="AI 스마트 시간표", layout="wide")
-st.title("🧠 AI 스마트 시간표 생성기")
-st.markdown("**전공 고정 │ 시간 겹침 0% │ 깔끔한 그리드**")
+st.title("✨광메카 1학년을 위한 시간표 생성기")
 
 col_settings, col_areas = st.columns([1, 1.5])
 
 with col_areas:
-    st.subheader("📚 영역 선택")
+    st.subheader(" 영역 선택")
     selected_areas = []
     
     # 체크박스의 description은 "1.사상과역사"와 같이 문자열로 되어 있으므로,
@@ -278,7 +277,7 @@ if generate_button:
     if not selected_areas:
         st.error("⚠️ 영역을 하나 이상 선택해주세요!")
     else:
-        st.info("💡 **주의:** 브라우저에 문제가 있는 경우, **Ctrl + Shift + R**을 눌러 강제 새로고침을 시도해주세요.")
+        st.info("💡주의: 브라우저에 문제가 있는 경우, Ctrl + Shift + R을 눌러 강제 새로고침을 시도해주세요.")
         
         with st.spinner("⏳ AI가 최적의 시간표를 분석하고 있습니다..."):
             res = run_ai(selected_areas, num_courses, keyword)
