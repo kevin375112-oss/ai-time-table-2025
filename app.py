@@ -269,7 +269,7 @@ with col_settings:
     num_courses = st.selectbox("교양 과목 수", [1, 2, 3], index=1, key='num')
     keyword = st.text_input("AI 검색 키워드 (선택)", placeholder="예: 경제, 운동, 영어", key='key')
     st.markdown("---")
-    generate_button = st.button("시간표 생성 🚀", type="primary", use_container_width=True)
+    generate_button = st.button("시간표 생성", type="primary", use_container_width=True)
 
 st.markdown("---")
 
@@ -277,20 +277,20 @@ if generate_button:
     if not selected_areas:
         st.error("⚠️ 영역을 하나 이상 선택해주세요!")
     else:
-        st.info("💡주의: 브라우저에 문제가 있는 경우, Ctrl + Shift + R을 눌러 강제 새로고침을 시도해주세요.")
+        st.info("주의: 브라우저에 문제가 있는 경우, Ctrl + Shift + R을 눌러 강제 새로고침을 시도해주세요.")
         
         with st.spinner("⏳ AI가 최적의 시간표를 분석하고 있습니다..."):
             res = run_ai(selected_areas, num_courses, keyword)
         
         if not res:
-            st.error("❌ 선택한 조건에 맞는 시간표 조합을 찾을 수 없습니다. (금요일 제외 조건 때문일 수 있습니다.)")
+            st.error("선택한 조건에 맞는 시간표 조합을 찾을 수 없습니다. (금요일 제외 조건 때문일 수 있습니다.)")
         else:
             st.success(f"✅ 총 {len(res)}개의 추천 시간표를 찾았습니다.")
             
             for i, r in enumerate(res):
                 # 매칭 점수 40 초과 시 AI 추천 태그 (기존 ipywidgets 로직 유지)
                 match = any(c.get('match_score', 0) > 40 for c in r['schedule'] if c['type'] == 'general')
-                title = f"추천 {i+1}위 " + ("(🎯 AI 추천)" if match else "(평점 추천)")
+                title = f"추천 {i+1}위 " + ("( AI 추천)" if match else "(평점 추천)")
                 
                 with st.expander(title, expanded=(i == 0)):
                     st.markdown("### 선택된 교양 과목 목록")
